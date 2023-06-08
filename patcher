@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# sed -i "s/work_dir *= *\${chroots_iso}.*/work_dir=\${chroots_iso}/" buildiso
+
+source $(pwd)/conf
+
+file=$(which buildiso)
+
+function set_variable(){
+    # echo "s/$1 *=.*/$1=$2/" $file
+    sed -i "s/$1 *=.*/$1=$2/" $file
+}
+
+function add_more_line(){
+    sed -i "s/\($1\)/\1\n        $2/" $file
+}
+
+set_variable work_dir '\${chroots_iso}\n'
+set_variable pacman_conf '${profile}\/root-overlay\/etc\/pacman.conf\n' set_variable mnt_dir '${chroots_iso}\/mnt\n'
+sed -i  "s/root_list *=.*/root_list=\"base\/Packages-Root\"/" /usr/share/artools/iso/profile.sh
+set_variable 'local rootfs' '${work_dir}\n'
+sed -i  "s/ *chroots_iso *=.*\"\(.*\)/chroots_iso=\${mount}\1/" $file
+
+sed -i "s/clean_up_chroot \"\${rootfs}\"//" $file  #delete clean_up chroot
+
+
+text='source $(pwd)\/conf\nif [[ ! -v partition ]];then\n exit 1 \nreturn \nfi\nread -p "Are you sure to install in $partition and mount at $mount (y|n): " choice\nif [[ "$choice" == "y" ]];then\numount $partition\nmkfs.ext4 $partition -F \nmount $partition $chroots_iso\nelse\nexit 1\nreturn\nfi\n'
+add_more_line 'load_profile' "$text\n"
+add_more_line "profile='base'" 'source $(pwd)\/conf\n'
+add_more_line 'local rootfs.*' 'root_overlay=${profile}\/root-overlay\n'
+
+
+
+
+### BEGIN /etc/grub.d/20_linux_xen ###
+
+# uuid="abcd-4564-33434-2322-3434-343-343443"
+text2="sed -ie \"\/### BEGIN \\\\\/etc\\\\\/grub.d\\\\\/20_linux_xen ###\/,\/### END \\\\\/etc\\\\\/grub.d\\\\\/20_linux_xen ###\/d\"  \/boot\/grub\/grub.cfg"
+
+text="\\\n### BEGIN \\\\\/etc\\\\\/grub.d\\\\\/20_linux_xen ###\\\nmenuentry 'METIS Linux(Testing)' --class metis --class gnu-linux --class gnu --class os \\\\\$menuentry_id_option 'gnulinux-simple-6b3293c8-566a-4b70-a6d6-abbaa0ec0039' {\\\n        savedefault\\\n        load_video\\\n        set gfxpayload=keep\\\n        insmod gzio\\\n        insmod part_gpt\\\n        insmod ext2\\\n        search --no-floppy --fs-uuid --set=root \$uuid\\\n        echo	'Loading Linux linux ...'\\\n        linux	\\\\\/boot\\\\\/vmlinuz-linux root=UUID=\$uuid rw  quiet loglevel=3\\\n        echo	'Loading initial ramdisk ...'\\\n        initrd	\\\\\/boot\\\\\/intel-ucode.img \\\\\/boot\\\\\/amd-ucode.img \\\\\/boot\\\\\/initramfs-linux.img\\\n}\\\n### END \\\\\/etc\\\\\/grub.d\\\\\/20_linux_xen ###"
+
+text3="sed -i \"s\/\\\\\(### END \\\\\/etc\\\\\/grub.d\\\\\/10_linux ###\\\\\)\/\\\1$text\/\" \/boot\/grub\/grub.cfg"
+
+
+text4='chmod +x .\/genfstab \nsource $(pwd)\/conf\n .\/genfstab -U $mount > $mount\/etc\/fstab\n echo \"Fstab is generated\" \n cat $mount\/etc\/fstab\n  uuid=$(.\/genfstab -U $mount |grep UUID | cut -c 6-41)\necho $uuid\n '
+
+add_more_line '.*msg \"Done \[Base installation\] (rootfs)\"' "$text4\n$text2\n$text3\n chmod +x \$mount\/root\/customize_chroot.sh || echo 'customize_chroot.sh not found'\n echo 'Running customized chroot file'\n artix-chroot \$mount \/root\/customize_chroot.sh ||echo 'Some error occured in running customize chroot'\n exit "

@@ -1,0 +1,2 @@
+partition=/dev/nvme0n1p2
+mount=/metis
